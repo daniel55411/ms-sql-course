@@ -1,0 +1,5 @@
+# Ignore all
+*
+# Exclude *.sql
+!*.sql
+!.gitignore
