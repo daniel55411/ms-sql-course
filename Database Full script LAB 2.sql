@@ -85,21 +85,16 @@ BEGIN
 	EXCEPT 
 	SELECT FullNumber FROM Lab_2.Car
 
-	IF EXISTS(SELECT * FROM inserted 
+	IF EXISTS(
+	SELECT TOP 1 * FROM inserted 
 	INNER JOIN Lab_2.KPP ON inserted.Number = Lab_2.KPP.Number
-	WHERE inserted.Direction = Lab_2.KPP.Direction) 
+	ORDER BY inserted.TransitTime) 
 	BEGIN
 		RAISERROR('Car can not move in one direction twice', 16, 10)
 	END
 
-	MERGE Lab_2.KPP AS target
-	USING (SELECT * FROM inserted) AS source
-	ON (target.Number = source.Number)
-	WHEN MATCHED
-		THEN UPDATE SET Direction = source.Direction, TransitTime = source.TransitTime
-	WHEN NOT MATCHED
-		THEN INSERT (TransitTime, Number, Direction)
-		VALUES (source.TransitTime, source.Number, source.Direction);
+	INSERT INTO Lab_2.KPP
+	SELECT * FROM inserted
 END
 
 /*region RegionSynonyms*/
@@ -201,13 +196,13 @@ INSERT INTO Lab_2.KPP
 	VALUES
 	   ('05/02/17 14:12:13', 1, '»777»»77')
 
+SELECT * FROM Lab_2.KPP WHERE Number='»777»»77';
+
+INSERT INTO Lab_2.KPP
+	   (TransitTime, Direction, Number)
+	VALUES
+	   ('06/02/17 14:12:13', 1, '»277»»777'),
+	   ('07/02/17 14:12:13', 0, '»277»»777')
+
 SELECT * FROM Lab_2.KPP;
-
---INSERT INTO Lab_2.KPP
---	   (TransitTime, Direction, Number)
---	VALUES
---	   ('06/02/17 14:12:13', 1, '»277»»777'),
---	   ('07/02/17 14:12:13', 0, '»277»»777')
-
---SELECT * FROM Lab_2.KPP;
 
