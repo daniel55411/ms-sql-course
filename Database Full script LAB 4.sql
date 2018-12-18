@@ -82,7 +82,7 @@ CREATE FUNCTION Lab_4.GetEffective(@minutes int)
 RETURNS int
 AS BEGIN
 	DECLARE @id int;
-	SELECT @id=Id FROM Lab_4.Rate ORDER BY Lab_4.CalcTariff(Id, @minutes)
+	SELECT @id=Id FROM Lab_4.Rate ORDER BY Lab_4.CalcTariff(Id, @minutes) DESC
 	RETURN @id;
 END
 GO
@@ -230,14 +230,13 @@ BEGIN
 		SELECT @lastId = SCOPE_IDENTITY();
 		UPDATE Lab_4.Periods
 		SET Point_2=@x1
-		WHERE Id=@tariffId;
+		WHERE Id=@lastId;
 	END
 	ELSE
 	BEGIN
 		INSERT INTO Lab_4.Periods (Point_1, Point_2, EfTariffId)
 		VALUES (@x0, @x1, @tariffId)
 	END
-	
 	SELECT @x0 = @x1;
 	SELECT @lastInsTariff = @tariffId;
 	FETCH NEXT FROM cur1 
@@ -246,4 +245,5 @@ END
 CLOSE cur1;
 DEALLOCATE cur1;
 
-SELECT * FROM Lab_4.Periods
+SELECT r.Name, p.Point_1, p.Point_2 FROM Lab_4.Periods as p 
+INNER JOIN Lab_4.Rate as r ON r.Id = p.EfTariffId
