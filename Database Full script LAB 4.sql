@@ -60,6 +60,11 @@ AS BEGIN
 	SELECT @prepayPeriod = PrepayPeriod, @prepayValue = PrepayValue, @postpayValue = PostpayValue 
 	FROM Lab_4.Rate WHERE Id = @id;
 
+	if (@minutes = 0)
+	BEGIN
+		RETURN 0;
+	END
+	
 	if (@minutes <= @prepayPeriod)
 	BEGIN
 		RETURN @prepayValue;
@@ -69,13 +74,16 @@ AS BEGIN
 END
 GO
 
-IF OBJECT_ID('GetEffective', 'P') IS NOT NULL 
-	DROP PROCEDURE GetEffective;
+IF OBJECT_ID('GetEffective', 'FN') IS NOT NULL 
+	DROP FUNCTION GetEffective;
 GO 
 
-CREATE PROCEDURE Lab_4.GetEffective(@minutes int)
+CREATE FUNCTION Lab_4.GetEffective(@minutes int)
+RETURNS int
 AS BEGIN
-	SELECT TOP(1) Id, Name, Lab_4.CalcTariff(Id, @minutes) as value FROM Lab_4.Rate r ORDER BY value;
+	DECLARE @id int;
+	SELECT @id=Id FROM Lab_4.Rate ORDER BY Lab_4.CalcTariff(Id, @minutes)
+	RETURN @id;
 END
 GO
 
@@ -94,10 +102,7 @@ GO
 
 CREATE TABLE KB301_Zhenikhov.Lab_4.Points
 (
-	Id int identity(1, 1) primary key,
-	FirstTariffId int,
-	SecondTariffId int,
-	PointX int
+	X int primary key,
 )
 GO
 
@@ -109,43 +114,136 @@ CREATE TABLE KB301_Zhenikhov.Lab_4.Periods
 (
 	Id int identity(1, 1) primary key,
 	Point_1 int,
-	Point_2 int
+	Point_2 int,
+	EfTariffId int
 )
 GO
 
-IF OBJECT_ID('Intersection', 'FN') IS NOT NULL 
-	DROP FUNCTION Intersection;
-GO 
+DELETE FROM Lab_4.Points;
+INSERT INTO Lab_4.Points (X) VALUES (0), (45000)
 
-CREATE FUNCTION Lab_4.Intersection(@firstTariffId int, @secondTariffId int)
-RETURNS int
-AS BEGIN
-	DECLARE @prepayPeriod_1 int, @prepayValue_1 int, @postpayValue_1 int;
-	SELECT @prepayPeriod_1 = PrepayPeriod, @prepayValue_1 = PrepayValue, @postpayValue_1 = PostpayValue 
-	FROM Lab_4.Rate WHERE Id = @firstTariffId;
+DECLARE @t1 int, @a1 int, @b1 int,
+		@t2 int, @a2 int, @b2 int,
+		@x0 int, @y0 int, @id int,
+		@x1 int;
+DECLARE @temp1 int, @temp2 int, @temp3 int, @swapped int;
+SELECT @swapped = 0;
 
-	DECLARE @prepayPeriod_2 int, @prepayValue_2 int, @postpayValue_2 int;
-	SELECT @prepayPeriod_2 = PrepayPeriod, @prepayValue_2 = PrepayValue, @postpayValue_2 = PostpayValue 
-	FROM Lab_4.Rate WHERE Id = @secondTariffId;
+DECLARE cur1 CURSOR FOR
+SELECT Id, PrepayPeriod, PostpayValue, PrepayValue FROM Lab_4.Rate
 
-	if (@minutes <= @prepayPeriod)
+OPEN cur1
+
+FETCH NEXT FROM cur1 
+INTO @id, @t1, @a1, @b1
+WHILE @@FETCH_STATUS = 0
+BEGIN
+	DECLARE cur2 CURSOR FOR
+	SELECT PrepayPeriod, PostpayValue, PrepayValue FROM Lab_4.Rate
+	WHERE PrepayPeriod != @t1 AND PostpayValue != @a1 OR PrepayValue != @b1
+
+	OPEN cur2
+	FETCH NEXT FROM cur2
+	INTO @t2, @a2, @b2
+
+	WHILE @@FETCH_STATUS = 0
 	BEGIN
-		RETURN @prepayValue;
+		IF (@a1 = 0)
+		BEGIN
+			SELECT @temp1 = @a1, @temp2=@t1, @temp3=@b1,
+					@a1=@a2, @t1=@t2, @b1=@b2;
+
+			SELECT @a2=@temp1, @t2=@temp2, @b2=@temp3, @swapped=1;
+		END
+
+		SELECT @x0 = (@t2 + @a1*@t1 + @b1) / @a1;
+		IF (@x0 < @t1)
+		BEGIN
+			IF NOT EXISTS(SELECT * FROM Lab_4.Points WHERE X=@x0)
+			BEGIN
+				INSERT INTO Lab_4.Points (X) VALUES (@x0)
+			END
+		END
+
+		SELECT @x0 = (@a1*@t1 - @a2*@t2 + @b2 - @b1) / (@a1 - @a2);
+		SELECT @y0 = Lab_4.CalcTariff(@id, @x0);
+		IF (@y0 >= @b2 AND @y0 >= @b1)
+		BEGIN
+			IF (@x0 > 45000)
+			BEGIN
+				SELECT @x0 = 45000;
+			END
+
+			IF NOT EXISTS(SELECT * FROM Lab_4.Points WHERE X=@x0)
+			BEGIN
+				INSERT INTO Lab_4.Points (X) VALUES (@x0)
+			END
+		END
+		IF (@swapped = 1)
+		BEGIN
+			SELECT @temp1 = @a1, @temp2=@t1, @temp3=@b1,
+					@a1=@a2, @t1=@t2, @b1=@b2;
+
+			SELECT @a2=@temp1, @t2=@temp2, @b2=@temp3, @swapped=0;
+		END
+		FETCH NEXT FROM cur2
+		INTO @t2, @a2, @b2;
 	END
+	CLOSE cur2;
+	DEALLOCATE cur2;
 
-	RETURN @postpayValue * (@minutes - @prepayPeriod) + @prepayValue;
+	FETCH NEXT FROM cur1 
+	INTO @id, @t1, @a1, @b1
 END
-GO
+CLOSE cur1;
+DEALLOCATE cur1;
+SELECT * FROM Lab_4.Points
 
-IF OBJECT_ID('GetPoints', 'P') IS NOT NULL 
-	DROP PROCEDURE GetPoints;
-GO 
+--next step
+DECLARE cur1 CURSOR FOR
+SELECT * FROM Lab_4.Points ORDER BY X
 
-CREATE PROCEDURE Lab_4.GetPoints
-AS BEGIN
-	DELETE FROM Lab_4.Points;
+OPEN cur1;
+
+FETCH NEXT FROM cur1 
+INTO @x0
+
+IF @@FETCH_STATUS <> 0
+BEGIN
+	RETURN;
+END
+
+FETCH NEXT FROM cur1 
+INTO @x1
+
+DECLARE @tariffId int, @xAvg int,
+		@lastInsTariff int, @lastId int;
+SELECT @lastInsTariff = -1;
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+	SELECT @xAvg = (@x0 + @x1) / 2;
+	SELECT @tariffId = Lab_4.GetEffective(@xAvg);
+
+	IF (@tariffId = @lastInsTariff)
+	BEGIN
+		SELECT @lastId = SCOPE_IDENTITY();
+		UPDATE Lab_4.Periods
+		SET Point_2=@x1
+		WHERE Id=@tariffId;
+	END
+	ELSE
+	BEGIN
+		INSERT INTO Lab_4.Periods (Point_1, Point_2, EfTariffId)
+		VALUES (@x0, @x1, @tariffId)
+	END
 	
-	SELECT * FROM Lab_4.Rate as [1]
-	CROSS JOIN Lab_4.Rate as [2]
+	SELECT @x0 = @x1;
+	SELECT @lastInsTariff = @tariffId;
+	FETCH NEXT FROM cur1 
+	INTO @x1
 END
-GO
+CLOSE cur1;
+DEALLOCATE cur1;
+
+SELECT * FROM Lab_4.Periods
